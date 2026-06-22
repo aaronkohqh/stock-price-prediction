@@ -1,0 +1,14 @@
+name: stock-forecast
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - jupyter
+  - pip
+  - pip:
+      - yfinance

@@ -1,0 +1,24 @@
+# Environments
+.venv/
+venv/
+env/
+.conda/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Cached market data (reproducible from src/data.py)
+data/raw/*
+!data/raw/.gitkeep
+
+# Results artifacts (regenerated)
+results/*
+!results/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
