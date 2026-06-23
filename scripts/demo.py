@@ -1,43 +1,72 @@
 """
-v1 end-to-end demo.
+v1/v2 end-to-end demo: compare return generators on real data.
 
-Run from the repo root:  python scripts/demo.py NVDA 1260
+Run from the repo root:
+    PYTHONPATH=. python scripts/demo.py NVDA 1260
+    PYTHONPATH=. python scripts/demo.py NVDA 1260 --drift 0.07
 
-Fetches history, fits GBM, runs a Monte Carlo, prints the terminal
-distribution. (1260 trading days ~= 5 years.) Requires network on first run
-to populate the data cache.
+Fetches history, then runs the SAME Monte Carlo engine through each generator
+and prints them side by side. (1260 trading days ~= 5 years.) Requires network
+on first run to populate the data cache.
+
+The point of the comparison: GBM assumes i.i.d. Normal returns and so throws
+away fat tails and volatility clustering; block bootstrap resamples real
+historical blocks and keeps them. On a fat-tailed name the bootstrap's
+downside percentiles should come out heavier -- that difference is v2.
 """
 
-import sys
+import argparse
+
+import numpy as np
+from scipy import stats
 
 from src.data import fetch_prices, to_log_returns
 from src.engine import run_simulation
-from src.models import GBMGenerator
+from src.models import GBMGenerator, BlockBootstrapGenerator
 
 
-def main(ticker: str = "NVDA", horizon: int = 1260) -> None:
+def _row(label, res):
+    p = res.percentiles()
+    # excess kurtosis of the simulated one-step returns: 0 == Normal/thin-tailed
+    daily = np.diff(np.log(res.price_paths), axis=1).ravel()
+    ek = float(stats.kurtosis(daily))
+    return (f"{label:<16} {ek:>8.2f}  "
+            f"${p[5]:>10,.0f} ${p[50]:>11,.0f} ${p[95]:>12,.0f}  "
+            f"{100*res.prob_below(res.start_price):>9.1f}%")
+
+
+def main(ticker="NVDA", horizon=1260, drift=None, n_paths=10_000):
     prices = fetch_prices(ticker)
     returns = to_log_returns(prices)
     start_price = float(prices["Close"].iloc[-1])
 
-    # NOTE: by default GBM uses historical drift. For a 5-year NVDA sim this
-    # is almost certainly too high -- try drift_override=0.07 for a modest
-    # market-like assumption, or sweep a range. See README caveat #1.
-    gen = GBMGenerator().fit(returns)
+    gbm = GBMGenerator(drift_override=drift).fit(returns)
+    boot = BlockBootstrapGenerator(block_size=20, drift_override=drift).fit(returns)
 
-    result = run_simulation(gen, start_price=start_price,
-                            horizon=horizon, n_paths=10_000)
+    res_gbm = run_simulation(gbm, start_price, horizon, n_paths=n_paths)
+    res_boot = run_simulation(boot, start_price, horizon, n_paths=n_paths)
 
-    print(f"\n{ticker}: start ${start_price:,.2f}, horizon {horizon} days")
-    print(f"Fitted per-day drift={gen.mu_period:.5f}, vol={gen.sigma_period:.5f}")
-    print("\nTerminal price percentiles:")
-    for q, v in result.percentiles().items():
-        print(f"  p{q:>2}: ${v:,.2f}")
-    print(f"\nP(below start price) = {result.prob_below(start_price):.1%}")
-    print("(GBM assumes i.i.d. Normal returns -- no fat tails or crashes.)")
+    drift_note = f"drift_override={drift}" if drift is not None else "historical drift"
+    print(f"\n{ticker}: start ${start_price:,.2f}, horizon {horizon} days "
+          f"(~{horizon/252:.1f}y), {drift_note}")
+    print(f"History excess kurtosis: {stats.kurtosis(returns.to_numpy()):.2f} "
+          f"(0 = Normal; >0 = fat tails GBM cannot represent)\n")
+
+    print(f"{'generator':<16} {'sim_ek':>8}  "
+          f"{'p5':>11} {'p50':>12} {'p95':>13}  {'P(<start)':>10}")
+    print("-" * 78)
+    print(_row("GBM", res_gbm))
+    print(_row("BlockBootstrap", res_boot))
+    print("\nIf the bootstrap's p5 is lower and sim_ek is higher, it is "
+          "representing\nthe fat tails GBM discards. Both share the same drift "
+          "here, so tails are\nthe only difference.")
 
 
 if __name__ == "__main__":
-    t = sys.argv[1] if len(sys.argv) > 1 else "NVDA"
-    h = int(sys.argv[2]) if len(sys.argv) > 2 else 1260
-    main(t, h)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("ticker", nargs="?", default="NVDA")
+    ap.add_argument("horizon", nargs="?", type=int, default=1260)
+    ap.add_argument("--drift", type=float, default=None,
+                    help="annualised log-drift override applied to BOTH generators")
+    args = ap.parse_args()
+    main(args.ticker, args.horizon, args.drift)
