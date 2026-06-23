@@ -1,10 +1,6 @@
 """
-Monte Carlo simulation engine.
-
-This is deliberately 'dumb': it takes ANY fitted ReturnGenerator, asks it for
-n_paths x horizon log-returns, reconstructs price paths from a start price,
-and summarises the terminal distribution. It contains no model logic, which
-is exactly why swapping generators costs nothing here.
+Monte Carlo simulation engine. Generator-agnostic: runs any fitted
+ReturnGenerator's paths and summarises the result. No model logic here.
 """
 
 from __future__ import annotations
@@ -32,6 +28,48 @@ class SimulationResult:
     def prob_below(self, level: float) -> float:
         """P(terminal price < level). prob_below(start_price) = P(loss)."""
         return float(np.mean(self.terminal_prices() < level))
+
+    def returns(self) -> np.ndarray:
+        """Terminal return per path, relative to start (e.g. -0.2 = -20%)."""
+        return self.terminal_prices() / self.start_price - 1.0
+
+    def var(self, confidence: float = 0.95) -> float:
+        """Value at Risk over the horizon, as a positive fractional loss.
+
+        var(0.95) is the loss not exceeded with 95% probability. Returns 0 if
+        the relevant quantile is a gain (no loss at that confidence).
+        """
+        q = (1.0 - confidence) * 100.0
+        worst_return = np.percentile(self.returns(), q)
+        return float(max(0.0, -worst_return))
+
+    def cvar(self, confidence: float = 0.95) -> float:
+        """Conditional VaR (expected shortfall): mean loss in the worst tail,
+        as a positive fractional loss. Always >= var at the same confidence.
+        """
+        r = self.returns()
+        q = (1.0 - confidence) * 100.0
+        threshold = np.percentile(r, q)
+        tail = r[r <= threshold]
+        if tail.size == 0:
+            return 0.0
+        return float(max(0.0, -tail.mean()))
+
+    def max_drawdown(self, qs=(50, 95)) -> dict[int, float]:
+        """Distribution of per-path max drawdown (positive fractional decline).
+
+        Max drawdown is the worst peak-to-trough drop along a path. Returns
+        percentiles of that distribution, e.g. {95: 0.41} = a 41% drawdown at
+        the 95th percentile of paths.
+        """
+        running_max = np.maximum.accumulate(self.price_paths, axis=1)
+        dd = (self.price_paths - running_max) / running_max  # <= 0
+        per_path_mdd = -dd.min(axis=1)                        # positive decline
+        return {q: float(np.percentile(per_path_mdd, q)) for q in qs}
+
+    def percentile_paths(self, qs=(5, 25, 50, 75, 95)) -> dict[int, np.ndarray]:
+        """Percentile of price across paths at each time step (for fan charts)."""
+        return {q: np.percentile(self.price_paths, q, axis=0) for q in qs}
 
 
 def run_simulation(

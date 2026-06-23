@@ -1,18 +1,10 @@
 """
-v1/v2 end-to-end demo: compare return generators on real data.
-
-Run from the repo root:
-    PYTHONPATH=. python scripts/demo.py NVDA 1260
+v1/v2 end-to-end demo. Run from repo root:
     PYTHONPATH=. python scripts/demo.py NVDA 1260 --drift 0.07
 
-Fetches history, then runs the SAME Monte Carlo engine through each generator
-and prints them side by side. (1260 trading days ~= 5 years.) Requires network
-on first run to populate the data cache.
-
-The point of the comparison: GBM assumes i.i.d. Normal returns and so throws
-away fat tails and volatility clustering; block bootstrap resamples real
-historical blocks and keeps them. On a fat-tailed name the bootstrap's
-downside percentiles should come out heavier -- that difference is v2.
+Fetches history, runs the same Monte Carlo engine through GBM and block
+bootstrap, prints a comparison + tail metrics, and saves a fan chart.
+Rationale lives in docs/.
 """
 
 import argparse
@@ -23,11 +15,11 @@ from scipy import stats
 from src.data import fetch_prices, to_log_returns
 from src.engine import run_simulation
 from src.models import GBMGenerator, BlockBootstrapGenerator
+from src.viz import fan_chart
 
 
 def _row(label, res):
     p = res.percentiles()
-    # excess kurtosis of the simulated one-step returns: 0 == Normal/thin-tailed
     daily = np.diff(np.log(res.price_paths), axis=1).ravel()
     ek = float(stats.kurtosis(daily))
     return (f"{label:<16} {ek:>8.2f}  "
@@ -57,9 +49,16 @@ def main(ticker="NVDA", horizon=1260, drift=None, n_paths=10_000):
     print("-" * 78)
     print(_row("GBM", res_gbm))
     print(_row("BlockBootstrap", res_boot))
-    print("\nIf the bootstrap's p5 is lower and sim_ek is higher, it is "
-          "representing\nthe fat tails GBM discards. Both share the same drift "
-          "here, so tails are\nthe only difference.")
+
+    # Tail risk (where the bootstrap's value actually shows) -- bootstrap result.
+    print(f"\nTail risk (BlockBootstrap):")
+    print(f"  VaR  95%: {100*res_boot.var(0.95):5.1f}%   99%: {100*res_boot.var(0.99):5.1f}%")
+    print(f"  CVaR 95%: {100*res_boot.cvar(0.95):5.1f}%   99%: {100*res_boot.cvar(0.99):5.1f}%")
+    mdd = res_boot.max_drawdown((50, 95))
+    print(f"  Max drawdown  median: {100*mdd[50]:.1f}%   p95: {100*mdd[95]:.1f}%")
+
+    path = fan_chart(res_boot, title=f"{ticker}: BlockBootstrap, ~{horizon/252:.1f}y")
+    print(f"\nFan chart saved to {path}")
 
 
 if __name__ == "__main__":
