@@ -1,4 +1,4 @@
-# CLAUDE.md
+# MORAL.md
 
 Project context and working principles. Read this fully before proposing any
 code. It encodes deliberate decisions — deviating from them is almost always a
