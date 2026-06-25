@@ -186,6 +186,22 @@ generalist (best one-step calibration), GBM is the long-horizon CLT play,
 Merton fixes GBM's centre via explicit jumps — each earns its place for a
 different question, and the calibration harness is what lets you say which.
 
+4. GARCH is the consistent all-rounder across horizons.** One-step
+calibration (mean abs coverage error) is consistent across tickers — NVDA and
+MSFT both rank: bootstrap (1.1% / 0.7%) < Merton (2.8% / 2.4%) < GARCH
+(3.0% / 2.9%) < GBM (4.5% / 4.7%). The bootstrap wins one-step, but it
+over-disperses at 21-step (5.1%), where GARCH is best (1.1%) — its volatility
+mean-reverts over the horizon instead of compounding block noise. So GARCH
+rarely wins a single horizon outright but is never badly wrong, because it is
+the only model conditioning on the current volatility regime.
+
+5. Volatility persistence is near-universal and independent of volatility
+level.** Fitting GARCH across eight names, persistence (α+β) sits in 0.91–0.99
+regardless of how calm or wild the stock is — a known stylised fact, recovered
+independently. Persistence and volatility level are separate axes: KO and JNJ
+share ~17% long-run vol but differ in persistence; TSLA is both the most
+volatile (~57%) and the most persistent (0.991, near a unit root).
+
 ## Two caveats, stated up front
 
 1. **Drift dominates long horizons.** Over 5 years the terminal distribution is
