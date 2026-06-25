@@ -1,53 +1,9 @@
 """
-Evaluation harness.
-
-Read this docstring before writing any model. It contains the most important
-methodological idea in the project.
-
-THE PROBLEM
------------
-The headline product is a 5-year terminal price distribution. You cannot
-out-of-sample test that directly: history gives you exactly ONE realised
-5-year path per (ticker, start date). One sample cannot validate a
-distribution. Any claim that a model "predicts the 5-year outcome well" is
-therefore unfalsifiable and should be treated with suspicion -- including
-when it's your own model.
-
-THE RESOLUTION
---------------
-We do not validate the long-horizon distribution. We validate the *engine
-that produces it*, at horizons where data is abundant, and then we are
-explicit and humble about extrapolating to 5 years.
-
-Concretely, evaluation operates at three levels:
-
-  1. BASELINE (does any model beat doing nothing?)
-     Every generator must be compared against trivial baselines -- e.g.
-     "tomorrow's return is zero" or "tomorrow equals today". Most complex
-     models fail to beat these on returns. Documenting *that* is a result,
-     not a failure of the project.
-
-  2. ONE-STEP CALIBRATION / COVERAGE (the honest core test)
-     A generator implies a distribution for the next period's return. Over
-     a long backtest, does its 90% interval actually contain the realised
-     return ~90% of the time? This is a *calibration* check, and unlike
-     point-accuracy it is the right question for a probabilistic model.
-     We have thousands of one-step observations, so this is well-powered.
-
-  3. SHORT-HORIZON TERMINAL CALIBRATION (the bridge)
-     Repeat the calibration idea at 1-month and 3-month horizons using many
-     non-overlapping windows. If the engine is well-calibrated at horizons
-     we *can* test, we have a stated, defensible basis for extending it to
-     horizons we cannot. The extrapolation assumption is named, not hidden.
-
-What we explicitly DO NOT claim: that good short-horizon calibration proves
-5-year accuracy. It does not. Regime change, structural breaks, and the
-sheer dominance of the drift assumption all break that extrapolation. The
-deliverable characterises *risk and dispersion under stated assumptions*,
-not the future.
-
-This module currently provides the baseline + coverage primitives. Fill in
-walk-forward orchestration as v1 solidifies.
+Evaluation harness. Calibration is the honest test of a probabilistic model:
+does its X% interval contain the realised value ~X% of the time? Unlike
+point accuracy, that is the right question here. See docs/ for the full
+rationale (why long horizons can't be tested directly, why we validate the
+engine at short horizons and extrapolate explicitly).
 """
 
 from __future__ import annotations
@@ -57,45 +13,107 @@ import pandas as pd
 
 
 def naive_zero_return_baseline(log_returns: pd.Series) -> float:
-    """RMSE of always predicting a zero next-period log-return.
-
-    Any model claiming predictive skill on returns must beat this.
-    """
+    """RMSE of always predicting a zero next-period log-return."""
     r = log_returns.dropna().to_numpy()
     return float(np.sqrt(np.mean(r ** 2)))
 
 
-def coverage(
-    realised: np.ndarray,
-    lower: np.ndarray,
-    upper: np.ndarray,
-) -> float:
-    """Fraction of realised values that fall inside [lower, upper].
-
-    For a well-calibrated 90% interval this should be ~0.90. Systematic
-    over- or under-coverage tells you the model's uncertainty is wrong --
-    which matters far more here than its point error.
-    """
+def coverage(realised, lower, upper) -> float:
+    """Fraction of realised values inside [lower, upper]. ~0.90 for a good 90% interval."""
     realised, lower, upper = map(np.asarray, (realised, lower, upper))
-    inside = (realised >= lower) & (realised <= upper)
-    return float(np.mean(inside))
+    return float(np.mean((realised >= lower) & (realised <= upper)))
 
 
-def walk_forward_windows(
-    n_obs: int,
-    train: int,
-    test: int,
-    step: int | None = None,
-):
-    """Yield (train_slice, test_slice) index pairs with NO shuffling and no
-    leakage: every test window is strictly after its training window.
-
-    This is the time-series-correct alternative to random k-fold, which would
-    leak the future into the past and inflate every score.
-    """
+def walk_forward_windows(n_obs, train, test, step=None):
+    """Yield (train_slice, test_slice) pairs, no shuffling, no leakage:
+    every test window is strictly after its training window."""
     step = step or test
     start = 0
     while start + train + test <= n_obs:
         yield (slice(start, start + train),
                slice(start + train, start + train + test))
         start += step
+
+
+def _interval(samples, level):
+    lo = np.percentile(samples, 100 * (1 - level) / 2)
+    hi = np.percentile(samples, 100 * (1 + level) / 2)
+    return lo, hi
+
+
+def one_step_calibration(
+    generator,
+    log_returns: pd.Series,
+    levels=(0.50, 0.80, 0.90, 0.95),
+    train: int = 500,
+    step: int = 5,
+    n_paths: int = 2000,
+    seed: int = 0,
+):
+    """Walk forward: fit on a rolling window, ask the generator for its
+    one-step return distribution, check whether the realised next return
+    falls inside each nominal interval. Returns {level: empirical_coverage}
+    and the number of test points.
+    """
+    r = log_returns.dropna()
+    rv = r.to_numpy()
+    rng = np.random.default_rng(seed)
+    hits = {L: 0 for L in levels}
+    total = 0
+    for tr, te in walk_forward_windows(len(rv), train=train, test=1, step=step):
+        generator.fit(r.iloc[tr])
+        sim = generator.generate(horizon=1, n_paths=n_paths, rng=rng).ravel()
+        realised = rv[te][0]
+        total += 1
+        for L in levels:
+            lo, hi = _interval(sim, L)
+            if lo <= realised <= hi:
+                hits[L] += 1
+    return {L: hits[L] / total for L in levels}, total
+
+
+def horizon_calibration(
+    generator,
+    log_returns: pd.Series,
+    horizon: int,
+    levels=(0.50, 0.80, 0.90, 0.95),
+    train: int = 500,
+    n_paths: int = 2000,
+    seed: int = 0,
+):
+    """Same idea at a multi-step horizon, using non-overlapping test windows:
+    compare the simulated cumulative h-step return distribution against the
+    realised cumulative h-step return. Bridges one-step calibration toward
+    the (untestable) long horizons.
+    """
+    r = log_returns.dropna()
+    rv = r.to_numpy()
+    rng = np.random.default_rng(seed)
+    hits = {L: 0 for L in levels}
+    total = 0
+    for tr, te in walk_forward_windows(len(rv), train=train, test=horizon, step=horizon):
+        generator.fit(r.iloc[tr])
+        sim = generator.generate(horizon=horizon, n_paths=n_paths, rng=rng)
+        cum = sim.sum(axis=1)                 # cumulative h-step return per path
+        realised = rv[te].sum()
+        total += 1
+        for L in levels:
+            lo, hi = _interval(cum, L)
+            if lo <= realised <= hi:
+                hits[L] += 1
+    return {L: hits[L] / total for L in levels}, total
+
+
+def calibration_error(result: dict) -> float:
+    """Mean absolute gap between nominal and empirical coverage. 0 = perfect."""
+    return float(np.mean([abs(L - emp) for L, emp in result.items()]))
+
+
+def calibration_report(result: dict, total: int, label: str = "") -> str:
+    lines = [f"Calibration{(' — ' + label) if label else ''}  ({total} test points)",
+             f"  {'nominal':>8}  {'empirical':>10}  {'gap':>7}"]
+    for L, emp in sorted(result.items()):
+        lines.append(f"  {L:>8.0%}  {emp:>10.1%}  {emp-L:>+7.1%}")
+    lines.append(f"  mean abs calibration error: {calibration_error(result):.1%}")
+    lines.append("  (empirical < nominal = overconfident; > nominal = underconfident)")
+    return "\n".join(lines)
