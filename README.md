@@ -146,7 +146,7 @@ where they don't, is treated as a contribution — not an omission.
 | — | Fan chart + VaR/CVaR/max-drawdown | **done** |
 | — | Advisory layer (rules-based) | scaffolded |
 | — | Evaluation harness (walk-forward/coverage) | scaffolded |
-| v3 | Jump-diffusion (Merton) | planned — explicit shocks |
+| v3 | Jump-diffusion (Merton) | **done** — explicit shocks beyond the sample |
 | v4 | GARCH / regime | planned — volatility clustering |
 | v5 | ML volatility-regime | planned — learned conditional volatility |
 | v6+ | Ensemble of generators | planned |
@@ -170,6 +170,21 @@ One-step: bootstrap wins — daily returns are fat-tailed (kurtosis ≈ 6–8), 
 No model dominates across horizons; the right tool depends on the timescale.
 
 Validation/caveats: the harness is near-perfect on synthetic i.i.d.-Normal data (≈1.8% error, as GBM should be), so the results are trusted. The 21-step tests use ~173 windows (noisier than ~728 one-step); the bootstrap's over-dispersion is partly a block_size artifact. Both models under-cover the 95% tail at one step — motivating v3 (jump-diffusion).
+
+3. The deepest tail resists all three models.** Merton adds explicit
+Poisson jumps to reach shocks beyond the historical sample, and on synthetic
+fat-tailed data it calibrates the 95% tail almost perfectly. But on real NVDA,
+all three models are still under-cover the 95% interval (GBM −2.3%, bootstrap
+−2.3%, Merton −3.5%), and tuning Merton's jump threshold improves the centre
+without fixing the deep tail. The persistent under-coverage is structural where
+real extreme days are fatter than a Normal-diffusion-plus-Normal-jump family
+can represent — not a tuning failure. Naming that limit honestly matters more
+than hiding it behind a tuned number.
+
+The takeaway across all three: no single model dominates. Bootstrap is the
+generalist (best one-step calibration), GBM is the long-horizon CLT play,
+Merton fixes GBM's centre via explicit jumps — each earns its place for a
+different question, and the calibration harness is what lets you say which.
 
 ## Two caveats, stated up front
 
