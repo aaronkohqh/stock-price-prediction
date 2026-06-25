@@ -154,21 +154,24 @@ where they don't, is treated as a contribution — not an omission.
 
 ## Findings (so far)
 
-Running GBM vs block bootstrap across four tickers shows the difference is
-**horizon- and shape-dependent**, not uniform:
+Both results come from running the engine and calibration harness, not from assumption.
 
-- NVDA, AAPL (5y): nearly identical central percentiles — long-horizon
-  averaging (CLT) washes the fat tails out.
-- TSLA (2y): bootstrap visibly *wider* — violent tails survive the shorter
-  horizon.
-- MSFT (1y): bootstrap visibly *narrower* — the real return shape is calmer than
-  a Normal of the same variance assumes.
+1. The model difference is horizon- and shape-dependent. GBM vs bootstrap barely differ in the central percentiles at long horizons (CLT smooths the daily fat tails away), but diverge at shorter horizons and in the extreme tail (p1, worst day, max drawdown) — which is why those tail metrics are reported, not just p5–p95.
 
-The model choice barely moves the central band but reshapes the **extreme tail**
-(p1, p0.5, worst day, max drawdown) — which is why those metrics are reported
-explicitly rather than just p5–p95.
+2. Which model is better calibrated also flips with horizon. Mean absolute coverage error across {50, 80, 90, 95}% intervals:
 
-## Two honest caveats, stated up front
+Ticker	Horizon	GBM	Bootstrap
+NVDA	one-step	4.5%	1.1%
+MSFT	one-step	4.7%	0.7%
+AAPL	21-step	2.0%	5.1%
+MSFT	21-step	4.2%	5.1%
+One-step: bootstrap wins — daily returns are fat-tailed (kurtosis ≈ 6–8), GBM's Normal can't represent that, so it's underconfident in the centre.
+21-step: GBM wins — summing returns pulls the distribution toward Normal (CLT), while the bootstrap's 20-day blocks over-disperse.
+No model dominates across horizons; the right tool depends on the timescale.
+
+Validation/caveats: the harness is near-perfect on synthetic i.i.d.-Normal data (≈1.8% error, as GBM should be), so the results are trusted. The 21-step tests use ~173 windows (noisier than ~728 one-step); the bootstrap's over-dispersion is partly a block_size artifact. Both models under-cover the 95% tail at one step — motivating v3 (jump-diffusion).
+
+## Two caveats, stated up front
 
 1. **Drift dominates long horizons.** Over 5 years the terminal distribution is
    governed by the assumed drift μ, the hardest input to estimate. Naively
