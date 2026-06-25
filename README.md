@@ -237,5 +237,4 @@ to `results/fan_chart.png`.
 
 ## Status
 
-v1 and v2 and v3 are built, tested, and committed, along with the fan chart and tail
-metrics.
+v1 and v2 and v3 and v4 are built, tested, and committed.
