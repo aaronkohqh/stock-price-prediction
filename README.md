@@ -171,7 +171,7 @@ No model dominates across horizons; the right tool depends on the timescale.
 
 Validation/caveats: the harness is near-perfect on synthetic i.i.d.-Normal data (≈1.8% error, as GBM should be), so the results are trusted. The 21-step tests use ~173 windows (noisier than ~728 one-step); the bootstrap's over-dispersion is partly a block_size artifact. Both models under-cover the 95% tail at one step — motivating v3 (jump-diffusion).
 
-3. The deepest tail resists all three models.** Merton adds explicit
+3. The deepest tail resists all three models. Merton adds explicit
 Poisson jumps to reach shocks beyond the historical sample, and on synthetic
 fat-tailed data it calibrates the 95% tail almost perfectly. But on real NVDA,
 all three models are still under-cover the 95% interval (GBM −2.3%, bootstrap
@@ -186,7 +186,7 @@ generalist (best one-step calibration), GBM is the long-horizon CLT play,
 Merton fixes GBM's centre via explicit jumps — each earns its place for a
 different question, and the calibration harness is what lets you say which.
 
-4. GARCH is the consistent all-rounder across horizons.** One-step
+4. GARCH is the consistent all-rounder across horizons. One-step
 calibration (mean abs coverage error) is consistent across tickers — NVDA and
 MSFT both rank: bootstrap (1.1% / 0.7%) < Merton (2.8% / 2.4%) < GARCH
 (3.0% / 2.9%) < GBM (4.5% / 4.7%). The bootstrap wins one-step, but it
@@ -196,7 +196,7 @@ rarely wins a single horizon outright but is never badly wrong, because it is
 the only model conditioning on the current volatility regime.
 
 5. Volatility persistence is near-universal and independent of volatility
-level.** Fitting GARCH across eight names, persistence (α+β) sits in 0.91–0.99
+level. Fitting GARCH across eight names, persistence (α+β) sits in 0.91–0.99
 regardless of how calm or wild the stock is — a known stylised fact, recovered
 independently. Persistence and volatility level are separate axes: KO and JNJ
 share ~17% long-run vol but differ in persistence; TSLA is both the most
