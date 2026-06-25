@@ -221,6 +221,5 @@ to `results/fan_chart.png`.
 
 ## Status
 
-v1 and v2 are built, tested, and committed, along with the fan chart and tail
-metrics. The advisory layer and evaluation harness are scaffolded; v3+ are
-planned. See the roadmap above.
+v1 and v2 and v3 are built, tested, and committed, along with the fan chart and tail
+metrics.
