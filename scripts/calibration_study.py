@@ -75,8 +75,8 @@ def summarize(df, horizon):
     if "persistence" in df:
         p = df["persistence"]
         print(f"\n  GARCH persistence (alpha+beta): mean={p.mean():.3f}  "
-              f"range={p.min():.3f}-{p.max():.3f}  (all in [0.9,1) confirms the stylised fact)")
-
+              f"range={p.min():.3f}-{p.max():.3f}  "
+              f"({(p >= 0.9).mean():.0%} of tickers above 0.90 — high persistence is near-universal)")
 
 def main():
     ap = argparse.ArgumentParser()

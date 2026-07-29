@@ -152,55 +152,55 @@ where they don't, is treated as a contribution — not an omission.
 | v6+ | Ensemble of generators | planned |
 | — | Streamlit app | planned — built last, over a stable backend |
 
-## Findings (so far)
+## Findings
 
-Both results come from running the engine and calibration harness, not from assumption.
+All results are produced by the calibration harness across a 30-ticker
+universe (`scripts/calibration_study.py`), not by assumption.
 
-1. The model difference is horizon- and shape-dependent. GBM vs bootstrap barely differ in the central percentiles at long horizons (CLT smooths the daily fat tails away), but diverge at shorter horizons and in the extreme tail (p1, worst day, max drawdown) — which is why those tail metrics are reported, not just p5–p95.
+### Which model is best depends entirely on the horizon
 
-2. Which model is better calibrated also flips with horizon. Mean absolute coverage error across {50, 80, 90, 95}% intervals:
+Mean absolute coverage error across {50, 80, 90, 95}% intervals, 30 tickers:
 
-Ticker	Horizon	GBM	Bootstrap
-NVDA	one-step	4.5%	1.1%
-MSFT	one-step	4.7%	0.7%
-AAPL	21-step	2.0%	5.1%
-MSFT	21-step	4.2%	5.1%
-One-step: bootstrap wins — daily returns are fat-tailed (kurtosis ≈ 6–8), GBM's Normal can't represent that, so it's underconfident in the centre.
-21-step: GBM wins — summing returns pulls the distribution toward Normal (CLT), while the bootstrap's 20-day blocks over-disperse.
-No model dominates across horizons; the right tool depends on the timescale.
+| Model | One-step mean | wins | 21-step mean | wins |
+|-------|--------------|------|--------------|------|
+| Bootstrap | **1.3%** | **26/30** | 3.5% | 7/30 |
+| Merton | 2.7% | 3/30 | **2.6%** | 10/30 |
+| GARCH | 3.8% | 1/30 | **2.6%** | **11/30** |
+| GBM | 5.0% | 0/30 | 2.9% | 2/30 |
 
-Validation/caveats: the harness is near-perfect on synthetic i.i.d.-Normal data (≈1.8% error, as GBM should be), so the results are trusted. The 21-step tests use ~173 windows (noisier than ~728 one-step); the bootstrap's over-dispersion is partly a block_size artifact. Both models under-cover the 95% tail at one step — motivating v3 (jump-diffusion).
+The ranking reverses. The bootstrap dominates one-step (26/30) and is *worst*
+at 21-step; the adaptive-volatility models take over at horizon.
 
-3. The deepest tail resists all three models. Merton adds explicit
-Poisson jumps to reach shocks beyond the historical sample, and on synthetic
-fat-tailed data it calibrates the 95% tail almost perfectly. But on real NVDA,
-all three models are still under-cover the 95% interval (GBM −2.3%, bootstrap
-−2.3%, Merton −3.5%), and tuning Merton's jump threshold improves the centre
-without fixing the deep tail. The persistent under-coverage is structural where
-real extreme days are fatter than a Normal-diffusion-plus-Normal-jump family
-can represent — not a tuning failure. Naming that limit honestly matters more
-than hiding it behind a tuned number.
+- **One-step:** daily returns are fat-tailed (excess kurtosis 6-8). The
+  bootstrap resamples the real return shape, so it wins almost everywhere;
+  GBM's Normal never wins once. The three exceptions are instructive - Merton
+  takes TSLA, MRK and AMD, all names where discrete jumps dominate.
+- **21-step:** the bootstrap's 20-day blocks leave too few independent draws
+  over a 21-day horizon and over-disperse the cumulative distribution. GARCH's
+  volatility mean-reverts across the horizon instead, and GBM improves as the
+  CLT pulls multi-day returns toward Normal.
 
-The takeaway across all three: no single model dominates. Bootstrap is the
-generalist (best one-step calibration), GBM is the long-horizon CLT play,
-Merton fixes GBM's centre via explicit jumps — each earns its place for a
-different question, and the calibration harness is what lets you say which.
+**No model dominates; the right tool depends on the timescale of the question.**
+That is the project's main empirical result.
 
-4. GARCH is the consistent all-rounder across horizons. One-step
-calibration (mean abs coverage error) is consistent across tickers — NVDA and
-MSFT both rank: bootstrap (1.1% / 0.7%) < Merton (2.8% / 2.4%) < GARCH
-(3.0% / 2.9%) < GBM (4.5% / 4.7%). The bootstrap wins one-step, but it
-over-disperses at 21-step (5.1%), where GARCH is best (1.1%) — its volatility
-mean-reverts over the horizon instead of compounding block noise. So GARCH
-rarely wins a single horizon outright but is never badly wrong, because it is
-the only model conditioning on the current volatility regime.
+### Volatility persistence is near-universal
 
-5. Volatility persistence is near-universal and independent of volatility
-level. Fitting GARCH across eight names, persistence (α+β) sits in 0.91–0.99
-regardless of how calm or wild the stock is — a known stylised fact, recovered
-independently. Persistence and volatility level are separate axes: KO and JNJ
-share ~17% long-run vol but differ in persistence; TSLA is both the most
-volatile (~57%) and the most persistent (0.991, near a unit root).
+Fitting GARCH(1,1) across the same 30 tickers, persistence (alpha + beta) has
+mean **0.951** and range **0.832-0.999** - high for every name regardless of its
+volatility level, a known stylised fact recovered independently. Persistence
+and volatility level are separate axes: KO and JNJ share ~17% long-run vol but
+differ in persistence, while TSLA is both the most volatile (~57%) and the most
+persistent (0.991, near a unit root).
+
+### Honest limits
+
+All four models under-cover the deepest 95% tail on real data, and tuning
+Merton's jump threshold improves the centre without fixing it - the shortfall
+is structural to a Normal-diffusion family, not a tuning failure. This is what
+motivates a Student-t innovation variant (GARCH-t) as future work. The 21-step
+tests also use fewer non-overlapping windows (~173) than the one-step tests
+(~728), so their per-ticker numbers are noisier.
+
 
 ## Two caveats, stated up front
 
@@ -234,6 +234,16 @@ PYTHONPATH=. python scripts/demo.py MSFT 252 --drift 0.05
 `ticker` and `horizon` (in trading days; 252 ≈ 1 year) are positional; `--drift`
 sets an annualised log-drift applied to both generators. The fan chart is saved
 to `results/fan_chart.png`.
+
+## Testing
+
+    pytest
+
+32 tests covering generator contract invariants, per-model correctness (GBM
+parameter recovery, bootstrap kurtosis preservation, GARCH MLE recovering known
+parameters), engine invariants (CVaR >= VaR, monotonic percentiles), and a check
+that the calibration harness itself is near-perfect on synthetic Normal data.
+
 
 ## Status
 
