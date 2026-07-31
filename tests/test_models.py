@@ -5,10 +5,14 @@ import pandas as pd
 import pytest
 from scipy import stats
 
-from src.models import (GBMGenerator, BlockBootstrapGenerator,
-                        MertonJumpGenerator, GARCHGenerator)
+from numpy.lib.stride_tricks import sliding_window_view
 
-ALL = [GBMGenerator, BlockBootstrapGenerator, MertonJumpGenerator, GARCHGenerator]
+from src.models import (GBMGenerator, BlockBootstrapGenerator,
+                        MertonJumpGenerator, GARCHGenerator, MLVolGenerator)
+from src.models.ml_vol import _features, _LOOKBACK
+
+ALL = [GBMGenerator, BlockBootstrapGenerator, MertonJumpGenerator,
+       GARCHGenerator, MLVolGenerator]
 
 
 # ---- contract: every generator behaves the same way ----
@@ -95,3 +99,52 @@ def test_garch_stationarity_constraint(garch_returns):
 def test_garch_short_history_raises():
     with pytest.raises(ValueError):
         GARCHGenerator().fit(pd.Series(np.random.default_rng(0).normal(0, 0.02, 50)))
+
+
+# ---- ML volatility-regime (v5) ----
+
+def test_mlvol_tracks_latent_volatility(garch_returns):
+    """The learner must track the true latent volatility it never observes.
+    The ML analogue of GARCH recovering known parameters: it tests that the
+    model learned the signal, not merely that it ran."""
+    r, (o, a, b) = garch_returns
+    eps = r.to_numpy() - 0.0005
+    s2 = np.empty(eps.size)
+    s2[0] = o / (1 - a - b)
+    for t in range(1, eps.size):
+        s2[t] = o + a * eps[t - 1] ** 2 + b * s2[t - 1]
+
+    g = MLVolGenerator().fit(r)
+    e = r.to_numpy() - g.mu
+    hist = sliding_window_view(e, _LOOKBACK)
+    ts = np.arange(_LOOKBACK, e.size - g.target_window + 1)
+    pred = g.model.predict(_features(hist[ts - _LOOKBACK]))
+
+    assert np.corrcoef(pred, np.sqrt(s2)[ts])[0, 1] > 0.6
+
+
+def test_mlvol_features_have_no_lookahead():
+    """Features for a sample must be invariant to anything at or after its
+    timestamp -- the leakage check the whole evaluation depends on."""
+    rng = np.random.default_rng(0)
+    eps = rng.normal(0, 0.02, 500)
+    ts = np.arange(_LOOKBACK, eps.size - 21 + 1)
+    X = _features(sliding_window_view(eps, _LOOKBACK)[ts - _LOOKBACK])
+
+    corrupted = eps.copy()
+    corrupted[300:] = 999.0
+    X2 = _features(sliding_window_view(corrupted, _LOOKBACK)[ts - _LOOKBACK])
+
+    past = ts <= 300
+    assert np.allclose(X[past], X2[past])
+
+
+def test_mlvol_drift_override_recenters(returns):
+    out = MLVolGenerator(drift_override=0.06).fit(returns).generate(
+        2520, 1500, np.random.default_rng(0))
+    assert abs(out.mean() * 252 - 0.06) < 0.02
+
+
+def test_mlvol_short_history_raises():
+    with pytest.raises(ValueError):
+        MLVolGenerator().fit(pd.Series(np.random.default_rng(0).normal(0, 0.02, 80)))
