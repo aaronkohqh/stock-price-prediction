@@ -148,7 +148,7 @@ where they don't, is treated as a contribution — not an omission.
 | — | Evaluation harness (walk-forward/coverage) | scaffolded |
 | v3 | Jump-diffusion (Merton) | **done** — explicit shocks beyond the sample |
 | v4 | GARCH / regime | planned — volatility clustering |
-| v5 | ML volatility-regime | planned — learned conditional volatility |
+| v5 | ML volatility-regime (GradientBoosting) | **done** - ties GARCH one-step, higher variance at horizon |
 | v6+ | Ensemble of generators | planned |
 | — | Streamlit app | planned — built last, over a stable backend |
 
@@ -201,6 +201,53 @@ motivates a Student-t innovation variant (GARCH-t) as future work. The 21-step
 tests also use fewer non-overlapping windows (~173) than the one-step tests
 (~728), so their per-ticker numbers are noisier.
 
+
+
+### v5: the ML model was built, measured, and did not earn the default slot
+
+v5 replaces GARCH's three-parameter recursion with a gradient-boosted
+regressor (scikit-learn) that learns the map from nine backward-looking
+features to forward realised volatility. It predicts *volatility only* -
+never returns, direction, or events - and slots in behind the same
+`ReturnGenerator` contract as everything else.
+
+It was evaluated with the same harness as v1-v4:
+
+| Horizon | GARCH | MLVol |
+|---------|-------|-------|
+| one-step (8 tickers) | 3.3% mean / 3.3% median | 3.4% / 3.3% |
+| 21-step (30 tickers) | 2.6% / 2.3%, wins 8/30 | 3.4% / 2.8%, wins 7/30 |
+
+**At one step the two are indistinguishable.** A 150-tree ensemble on nine
+engineered features recovers what a three-parameter model already captures and
+nothing more - evidence the GARCH form is well specified for this task, not
+that the learner is broken.
+
+**At 21 steps MLVol wins almost as often as GARCH but fails far more often.**
+Counting tickers with error above 4%: MLVol fails on 9 of 30 (AAPL 8.5%, AMD
+and CSCO 7.9%), GARCH on 3. MLVol also produces the single best result in the
+study (PEP, 0.3%). It is the highest-variance model tested.
+
+For a risk tool that is the wrong trade. You cannot know in advance whether a
+ticker will behave like PEP or like AAPL, and the failure mode of a risk model
+is understating risk. A model that is reliably decent beats one that is
+sometimes excellent and occasionally badly miscalibrated. **GARCH stays the
+default; MLVol ships as an available generator, not the recommended one.**
+
+Two findings worth keeping from building it:
+
+- **The learning target mattered more than the architecture.** One-step
+  calibration error fell monotonically as the forward window defining the
+  target was lengthened: 20.4% (W=2), 10.4% (W=3), 5.4% (W=5), 2.1% (W=10),
+  1.2% (W=21). A single day's volatility is too noisy to learn; the same
+  latent quantity measured over a smoother window is far more learnable. No
+  amount of tuning trees would have recovered that.
+- **The leverage effect is real signal.** `downside_21` (mean of negative
+  returns over 21 days) carries 15% of feature importance on NVDA, and its
+  importance rises from 0.22 to 0.59 on synthetic data when an asymmetry is
+  injected - the learner detects it only when present. Symmetric GARCH in r^2
+  structurally cannot express this. But real signal did not translate into
+  better calibration, which is the distinction that matters.
 
 ## Two caveats, stated up front
 
