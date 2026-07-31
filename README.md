@@ -20,6 +20,11 @@ is treated as a category error: a 5-year price is among the most stochastic
 objects in finance, and any tool claiming to predict it accurately is either
 lucky or lying (a public, accurate predictor would destroy its own signal).
 
+![Example fan chart](docs/example_fan_chart.png)
+
+*NVDA, one year, GARCH(1,1) with a 7% drift assumption. The median line is
+the deterministic model; the bands are the probabilistic one.*
+
 
 
 ## Conceptual spine
