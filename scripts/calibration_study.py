@@ -19,7 +19,7 @@ import pandas as pd
 
 from src.data import fetch_prices, to_log_returns
 from src.models import (GBMGenerator, BlockBootstrapGenerator,
-                        MertonJumpGenerator, GARCHGenerator)
+                        MertonJumpGenerator, GARCHGenerator, MLVolGenerator)
 from src.evaluate import (one_step_calibration, horizon_calibration,
                           calibration_error)
 
@@ -35,6 +35,7 @@ MODELS = {
     "Bootstrap": lambda: BlockBootstrapGenerator(block_size=20),
     "Merton": lambda: MertonJumpGenerator(),
     "GARCH": lambda: GARCHGenerator(),
+    "MLVol": lambda: MLVolGenerator(),
 }
 
 
