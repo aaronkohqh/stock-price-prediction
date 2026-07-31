@@ -147,7 +147,7 @@ where they don't, is treated as a contribution — not an omission.
 | — | Advisory layer (rules-based) | scaffolded |
 | — | Evaluation harness (walk-forward/coverage) | scaffolded |
 | v3 | Jump-diffusion (Merton) | **done** — explicit shocks beyond the sample |
-| v4 | GARCH / regime | planned — volatility clustering |
+| v4 | GARCH(1,1), hand-rolled MLE | **done** - volatility as a process |
 | v5 | ML volatility-regime (GradientBoosting) | **done** - ties GARCH one-step, higher variance at horizon |
 | v6+ | Ensemble of generators | planned |
 | — | Streamlit app | planned — built last, over a stable backend |
@@ -294,4 +294,13 @@ that the calibration harness itself is near-perfect on synthetic Normal data.
 
 ## Status
 
-v1 and v2 and v3 and v4 are built, tested, and committed.
+v1-v5 are built, tested, and committed, along with the walk-forward
+calibration harness, the 30-ticker calibration study, the fan chart and
+tail metrics, and a 32-test pytest suite. The advisory layer is drafted but
+not committed; GARCH-t, an ensemble generator, and the Streamlit app are
+planned.
+
+---
+
+Built with AI assistance (Claude); all design decisions, modelling choices,
+and analysis are my own.
