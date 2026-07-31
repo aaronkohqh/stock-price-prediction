@@ -153,7 +153,7 @@ where they don't, is treated as a contribution — not an omission.
 | — | Evaluation harness (walk-forward/coverage) | scaffolded |
 | v3 | Jump-diffusion (Merton) | **done** — explicit shocks beyond the sample |
 | v4 | GARCH(1,1), hand-rolled MLE | **done** - volatility as a process |
-| v5 | ML volatility-regime (GradientBoosting) | **done** - ties GARCH one-step, higher variance at horizon |
+| v5 | ML volatility-regime (GradientBoosting) | **done** - edges GARCH one-step, higher variance at horizon |
 | v6+ | Ensemble of generators | planned |
 | — | Streamlit app | planned — built last, over a stable backend |
 
@@ -168,12 +168,13 @@ Mean absolute coverage error across {50, 80, 90, 95}% intervals, 30 tickers:
 
 | Model | One-step mean | wins | 21-step mean | wins |
 |-------|--------------|------|--------------|------|
-| Bootstrap | **1.3%** | **26/30** | 3.5% | 7/30 |
-| Merton | 2.7% | 3/30 | **2.6%** | 10/30 |
-| GARCH | 3.8% | 1/30 | **2.6%** | **11/30** |
+| Bootstrap | **1.3%** | **27/30** | 3.5% | 5/30 |
+| Merton | 2.7% | 3/30 | **2.6%** | 8/30 |
+| GARCH | 3.8% | 0/30 | **2.6%** | 8/30 |
 | GBM | 5.0% | 0/30 | 2.9% | 2/30 |
+| MLVol | 3.4% | 0/30 | 3.4% | 7/30 |
 
-The ranking reverses. The bootstrap dominates one-step (26/30) and is *worst*
+The ranking reverses. The bootstrap dominates one-step (27/30) and is *worst*
 at 21-step; the adaptive-volatility models take over at horizon.
 
 - **One-step:** daily returns are fat-tailed (excess kurtosis 6-8). The
@@ -220,13 +221,14 @@ It was evaluated with the same harness as v1-v4:
 
 | Horizon | GARCH | MLVol |
 |---------|-------|-------|
-| one-step (8 tickers) | 3.3% mean / 3.3% median | 3.4% / 3.3% |
+| one-step (30 tickers) | 3.8% mean / 3.6% median | 3.4% / 3.4% |
 | 21-step (30 tickers) | 2.6% / 2.3%, wins 8/30 | 3.4% / 2.8%, wins 7/30 |
 
-**At one step the two are indistinguishable.** A 150-tree ensemble on nine
-engineered features recovers what a three-parameter model already captures and
-nothing more - evidence the GARCH form is well specified for this task, not
-that the learner is broken.
+**At one step MLVol edges GARCH slightly** (3.4% vs 3.8% mean error
+across 30 tickers), but neither is ever the best model on a single ticker —
+the bootstrap takes 27 of 30. Nine engineered features and 150 trees buy a
+marginal improvement over three parameters, and both are beaten decisively
+by simply resampling real returns.
 
 **At 21 steps MLVol wins almost as often as GARCH but fails far more often.**
 Counting tickers with error above 4%: MLVol fails on 9 of 30 (AAPL 8.5%, AMD
